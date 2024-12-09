@@ -1,0 +1,126 @@
+# -*- coding: utf-8 -*-
+
+
+import scipy.io
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from sklearn.neural_network import MLPClassifier
+from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+
+# Load the UMIST Cropped dataset
+data = scipy.io.loadmat('umist_cropped.mat')
+
+# Extract images and labels
+X = data['X']  # Feature matrix (images)
+y = data['y']  # Labels
+
+print(f"Shape of data: {X.shape}, Labels: {y.shape}")
+# Split data into training + validation (80%) and test (20%) sets
+sss = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+train_val_idx, test_idx = next(sss.split(X, y))
+X_train_val, X_test = X[train_val_idx], X[test_idx]
+y_train_val, y_test = y[train_val_idx], y[test_idx]
+
+# Split training + validation into training (70%) and validation (30%) sets
+sss_val = StratifiedShuffleSplit(n_splits=1, test_size=0.3, random_state=42)
+train_idx, val_idx = next(sss_val.split(X_train_val, y_train_val))
+X_train, X_val = X_train_val[train_idx], X_train_val[val_idx]
+y_train, y_val = y_train_val[train_idx], y_train_val[val_idx]
+
+print(f"Train: {X_train.shape}, Validation: {X_val.shape}, Test: {X_test.shape}")
+from sklearn.preprocessing import StandardScaler
+
+# Normalize data
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_val_scaled = scaler.transform(X_val)
+X_test_scaled = scaler.transform(X_test)
+
+# Apply PCA for dimensionality reduction
+pca = PCA(n_components=0.95)  # Retain 95% variance
+X_train_pca = pca.fit_transform(X_train_scaled)
+X_val_pca = pca.transform(X_val_scaled)
+X_test_pca = pca.transform(X_test_scaled)
+
+print(f"Reduced dimensions: {X_train_pca.shape[1]}")
+# Apply K-Means clustering
+kmeans = KMeans(n_clusters=40, random_state=42)  # 40 classes in the dataset
+kmeans.fit(X_train_pca)
+
+# Assign clusters
+train_clusters = kmeans.predict(X_train_pca)
+print(f"Cluster centers shape: {kmeans.cluster_centers_.shape}")
+# Train an MLP for classification
+mlp = MLPClassifier(hidden_layer_sizes=(128, 64), activation='relu',
+                    solver='adam', max_iter=200, random_state=42)
+
+# Fit the model
+mlp.fit(X_train_pca, y_train)
+
+# Validate the model
+y_val_pred = mlp.predict(X_val_pca)
+val_accuracy = accuracy_score(y_val, y_val_pred)
+print(f"Validation Accuracy: {val_accuracy:.2f}")
+# Test the model
+y_test_pred = mlp.predict(X_test_pca)
+test_accuracy = accuracy_score(y_test, y_test_pred)
+
+# Confusion Matrix
+conf_matrix = confusion_matrix(y_test, y_test_pred)
+
+print(f"Test Accuracy: {test_accuracy:.2f}")
+print(f"Confusion Matrix:\n{conf_matrix}")
+
+#Hyperparameter Tuning with GridSearchCV
+from sklearn.model_selection import GridSearchCV
+from sklearn.neural_network import MLPClassifier
+
+# Define the parameter grid for GridSearchCV
+param_grid = {
+    'hidden_layer_sizes': [(128, 64), (256, 128), (512, 256)],
+    'activation': ['relu', 'tanh'],
+    'solver': ['adam', 'sgd'],
+    'max_iter': [200, 300]
+}
+
+# Initialize MLP Classifier
+mlp = MLPClassifier(random_state=42)
+
+# GridSearchCV for hyperparameter tuning
+grid_search = GridSearchCV(mlp, param_grid, cv=3, n_jobs=-1, verbose=2)
+grid_search.fit(X_train_pca, y_train)
+
+# Best parameters found by GridSearchCV
+print(f"Best Parameters: {grid_search.best_params_}")
+
+# Evaluate the model with the best parameters
+best_mlp = grid_search.best_estimator_
+y_val_pred = best_mlp.predict(X_val_pca)
+val_accuracy = accuracy_score(y_val, y_val_pred)
+print(f"Validation Accuracy after tuning: {val_accuracy:.2f}")
+
+#Trying Random Forest Classifier
+from sklearn.ensemble import RandomForestClassifier
+
+# Initialize the RandomForestClassifier
+rf = RandomForestClassifier(n_estimators=100, random_state=42)
+
+# Train the Random Forest model
+rf.fit(X_train_pca, y_train)
+
+# Predict on validation set
+y_val_pred = rf.predict(X_val_pca)
+val_accuracy = accuracy_score(y_val, y_val_pred)
+print(f"Validation Accuracy (Random Forest): {val_accuracy:.2f}")
+
+# Predict on test set
+y_test_pred = rf.predict(X_test_pca)
+test_accuracy = accuracy_score(y_test, y_test_pred)
+print(f"Test Accuracy (Random Forest): {test_accuracy:.2f}")
+
+# Confusion Matrix for Random Forest
+conf_matrix_rf = confusion_matrix(y_test, y_test_pred)
+print(f"Confusion Matrix (Random Forest):\n{conf_matrix_rf}")
